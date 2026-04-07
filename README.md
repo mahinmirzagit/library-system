@@ -7,6 +7,9 @@
 
 A modern, comprehensive library management system built with Node.js, Express, and SQLite. Features a beautiful web interface for both administrators and users, complete with book cataloging, user management, activity tracking, and real-time notifications.
 
+Deployed on Vercel🔗
+Link: _NOT AVAILABLE_
+
 ## ✨ Features
 
 ### 🏢 Admin Dashboard
@@ -24,7 +27,7 @@ A modern, comprehensive library management system built with Node.js, Express, a
 - **Reading History**: Track borrowed books and reading progress
 - **Ratings & Reviews**: Rate and review books in the collection
 
-### 🌐 Public Website
+### 🌐 Public Website (Hero Section)
 - **Modern Landing Page**: Attractive homepage with feature highlights
 - **Contact & Support**: Integrated contact forms and rating system
 - **Authentication**: Secure login/registration with role-based access
@@ -40,8 +43,8 @@ A modern, comprehensive library management system built with Node.js, Express, a
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/library-management-system.git
-   cd library-management-system
+   git clone https://github.com/mahinmirzagit/library-system.git
+   cd library-system
    ```
 
 2. **Install dependencies**
@@ -65,9 +68,9 @@ The application will automatically initialize the SQLite database on first run.
 
 ### First-Time Setup
 1. Visit `http://localhost:3000` in your browser
-2. Click "Register" and create an admin account using verification code format: `ADM123-XYZ`
-3. Login with your admin credentials
-4. Access the admin dashboard at `http://localhost:3000/dashboard.html`
+2. Click "Register" and create an admin/user account using verification code format: `ADM123-XYZ` or `USR123-XYZ`
+3. Login with your admin/user credentials
+4. Access the admin/user dashboard at `http://localhost:3000/dashboard.html`
 
 ### Admin Features
 - **Dashboard Overview**: View statistics and recent activities
@@ -191,10 +194,6 @@ The application is fully responsive and works seamlessly across:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
-
-This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
-
 ## 🙏 Acknowledgments
 
 - Icons provided by [Font Awesome](https://fontawesome.com/)
@@ -203,7 +202,7 @@ This project is licensed under the ISC License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-For support, email support@librohub.com or create an issue in this repository.
+For support, email mahin12112006@gmail.com or create an issue in this repository.
 
 ---
 
