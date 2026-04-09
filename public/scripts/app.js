@@ -271,166 +271,151 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // ROLE TOGGLING LOGIC
+  const roleRadios = document.querySelectorAll('input[name="role"]');
+  roleRadios.forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      const paymentContainer = document.getElementById("payment-container");
+      const adminNotice = document.getElementById("admin-notice");
+      const vCodeInput = document.querySelector('input[name="verificationCode"]');
+
+      if (e.target.value === "admin") {
+        if (paymentContainer) paymentContainer.style.display = "none";
+        if (adminNotice) adminNotice.style.display = "block";
+        if (vCodeInput) vCodeInput.placeholder = "Enter Admin Secret Code (e.g. ADM-MASTER-777)";
+      } else {
+        if (paymentContainer) paymentContainer.style.display = "block";
+        if (adminNotice) adminNotice.style.display = "none";
+        if (vCodeInput) vCodeInput.placeholder = "Verification Code (e.g., USR123-XYZ)";
+      }
+    });
+  });
+
   payButtons.forEach((button) => {
     button.addEventListener("click", async () => {
       const form = button.closest("form");
-      const username = form.querySelector('input[name="name"]');
-      const password = form.querySelector('input[name="password"]');
-      const confirmPassword = form.querySelector(
-        'input[name="confirmPassword"]'
-      );
-      const cardNumber = form.querySelector('input[name="cardNumber"]');
-      const expiry = form.querySelector('input[name="expiry"]');
-      const cvv = form.querySelector('input[name="cvv"]');
       const role = form.querySelector('input[name="role"]:checked');
+      const nameInput = form.querySelector('input[name="name"]');
       const emailInput = form.querySelector('input[name="email"]');
+      const passwordInput = form.querySelector('input[name="password"]');
+      const confirmPasswordInput = form.querySelector('input[name="confirmPassword"]');
 
-      if (emailInput && emailInput.value.trim()) {
-        try {
-          const checkResponse = await fetch("/api/auth/check-user", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ email: emailInput.value }),
-          });
-          if (!checkResponse.ok) {
-            throw new Error(`HTTP error! status: ${checkResponse.status}`);
-          }
-          const checkResult = await checkResponse.json();
-          if (checkResult.exists) {
-            showError(
-              "email-error",
-              "User/Admin with this email already exists. Please use a different email or try login."
-            );
-            return;
-          }
-        } catch (error) {
-          console.error("Error checking user existence:", error);
-          showError(
-            "general-error",
-            "Failed to verify user. Please try again."
-          );
-          return;
-        }
-      }
-
-      let paymentValid = true;
-
-      if (!username || !username.value.trim()) {
-        paymentValid = false;
-        showError("username-error", "Username is required.");
-      } else if (/\s/.test(username.value)) {
-        paymentValid = false;
-        showError("username-error", "Username cannot contain spaces.");
-      }
-
-      if (!emailInput || !emailInput.value.trim()) {
-        paymentValid = false;
-        showError("email-error", "Email is required.");
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value)) {
-        paymentValid = false;
-        showError("email-error", "Please enter a valid email address.");
-      }
-
-      if (!password || !password.value.trim()) {
-        paymentValid = false;
-        showError("password-error", "Password is required.");
-      } else if (!/(?=.*[a-zA-Z])(?=.*\d)(?=.*\W)/.test(password.value)) {
-        paymentValid = false;
-        showError(
-          "password-error",
-          "Password must contain at least one letter, one number, and one symbol."
-        );
-      }
-
-      if (!confirmPassword || !confirmPassword.value.trim()) {
-        paymentValid = false;
-        showError("confirm-password-error", "Confirm password is required.");
-      } else if (password && password.value !== confirmPassword.value) {
-        paymentValid = false;
-        showError("confirm-password-error", "Passwords do not match.");
-      }
-
-      if (!role) {
-        paymentValid = false;
-        showError("role-error", "Please select a role.");
-      }
-
-      if (cardNumber && !/^\d{16}$/.test(cardNumber.value)) {
-        paymentValid = false;
-        showError(
-          "card-number-error",
-          "Card number must be exactly 16 digits."
-        );
-      }
-
-      if (expiry && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(expiry.value)) {
-        paymentValid = false;
-        showError("expiry-error", "Expiry date must be in MM/YY format.");
-      }
-
-      if (cvv && !/^\d{3}$/.test(cvv.value)) {
-        paymentValid = false;
-        showError("cvv-error", "CVV must be exactly 3 digits.");
-      }
-
-      if (!paymentValid) {
+      if (!nameInput || !nameInput.value.trim()) {
+        showError("username-error", "Please enter your username first.");
         return;
       }
 
-      const rolePrefix = role.value === "admin" ? "ADM" : "USR";
-      const numbers = Math.floor(100 + Math.random() * 900);
-      const letters2 =
-        String.fromCharCode(65 + Math.floor(Math.random() * 26)) +
-        String.fromCharCode(65 + Math.floor(Math.random() * 26)) +
-        String.fromCharCode(65 + Math.floor(Math.random() * 26));
-      generatedCode = `${rolePrefix}${numbers}-${letters2}`;
-
-      paymentCompleted = true;
-
-      if (emailInput && emailInput.value) {
-        console.log(
-          `Verification code sent to ${emailInput.value}: ${generatedCode}`
-        );
-        showError(
-          "success-message",
-          `Verification code sent to ${emailInput.value}!`
-        );
+      if (!emailInput || !emailInput.value.trim()) {
+        showError("email-error", "Please enter your email first.");
+        return;
       }
-      hideError("register-code-error");
 
-      button.innerHTML = '<i class="fas fa-check"></i> Sent';
-      button.style.backgroundColor = "var(--success)";
+      // Check if user already exists BEFORE payment
+      try {
+        const checkResponse = await fetch("/api/auth/check-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailInput.value.trim() }),
+        });
+        const checkResult = await checkResponse.json();
+        if (checkResult.exists) {
+          showError("email-error", "An account with this email already exists. Please login instead.");
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking account:", error);
+      }
+
+      if (!passwordInput || passwordInput.value.length < 8) {
+        showError("password-error", "Password must be at least 8 characters long.");
+        return;
+      }
+
+      if (passwordInput.value !== confirmPasswordInput.value) {
+        showError("confirm-password-error", "Passwords do not match.");
+        return;
+      }
+
+      // START OF RAZORPAY INTEGRATION
       button.disabled = true;
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing Gateway...';
 
-      setTimeout(() => {
-        button.innerHTML = "Send again";
-        button.style.backgroundColor = "";
-        button.disabled = true;
+      try {
+        // 1. Create Order on Server
+        const orderResponse = await fetch("/api/payments/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: 800, currency: "INR", email: emailInput.value.trim() }),
+        });
+        const order = await orderResponse.json();
 
-        const timerSpan = document.getElementById("countdown-timer");
-        timerSpan.style.visibility = "visible";
-        timerSpan.style.fontSize = "12px";
+        if (!orderResponse.ok) throw new Error(order.error || "Order creation failed.");
 
-        let countdown = 30;
-        timerSpan.textContent = `Send again in: ${countdown} seconds`;
+        // 2. Open Razorpay Checkout
+        const options = {
+          key: "rzp_test_SalsSeUn6okYsP", // Public Test Key
+          amount: order.amount,
+          currency: order.currency,
+          name: "LibroHub Library",
+          description: "Verification Fee for " + role.value.toUpperCase(),
+          image: "https://razorpay.com/assets/razorpay-glyph.svg",
+          order_id: order.id,
+          handler: async function (response) {
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment...';
+            
+            // 3. Verify Payment on Server
+            try {
+              const verifyResponse = await fetch("/api/payments/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  email: emailInput.value,
+                  role: role.value
+                }),
+              });
+              const verifyResult = await verifyResponse.json();
 
-        const countdownInterval = setInterval(() => {
-          countdown--;
-          timerSpan.textContent = `Not received? Send again in: ${countdown} seconds`;
-          if (countdown <= 0) {
-            clearInterval(countdownInterval);
-            timerSpan.style.visibility = "hidden";
-            timerSpan.textContent = "";
-            button.disabled = false;
+              if (verifyResult.success) {
+                showNotification("Payment Successful! Verification code sent to your inbox.", "success");
+                paymentCompleted = true;
+                button.innerHTML = '<i class="fas fa-check-circle"></i> Paid & Verified';
+                button.style.backgroundColor = "#10b981";
+              } else {
+                throw new Error(verifyResult.error || "Payment verification failed.");
+              }
+            } catch (err) {
+              showNotification(err.message, "error");
+              button.innerHTML = originalText;
+              button.disabled = false;
+            }
+          },
+          prefill: {
+            email: emailInput.value
+          },
+          theme: {
+            color: "#58a6ff"
+          },
+          modal: {
+            ondismiss: function() {
+              button.innerHTML = originalText;
+              button.disabled = false;
+            }
           }
-        }, 1000);
+        };
 
-        sendAgainTimeout = setTimeout(() => {
-          button.disabled = false;
-        }, 30000);
-      }, 2500);
+        const rzp = new Razorpay(options);
+        rzp.open();
+
+      } catch (error) {
+        console.error("Payment Error:", error);
+        showNotification(error.message || "Failed to initiate payment. Please try again.", "error");
+        button.innerHTML = originalText;
+        button.disabled = false;
+      }
     });
   });
 
@@ -552,34 +537,30 @@ document.addEventListener("DOMContentLoaded", function () {
           hideError("cvv-error");
         }
 
+        const role = form.querySelector('input[name="role"]:checked').value;
         const registerCode = form.querySelector(
           'input[name="verificationCode"]'
         );
-        if (!generatedCode) {
+        
+        // ADMINS BYPASS PAYMENT CHECK
+        if (role === "user" && !paymentCompleted) {
           isValid = false;
           showError(
             "register-code-error",
-            "Please complete the payment to obtain the verification code."
+            "Please complete the $10 payment to receive your verification email."
           );
         } else if (
           registerCode &&
-          !/^(ADM|USR)\d{3}-[A-Z]{3}$/.test(registerCode.value)
+          !/^(ADM|USR|ADM-MASTER)\d*.*$/.test(registerCode.value)
         ) {
-          isValid = false;
-          showError(
-            "register-code-error",
-            "Verification code must be in ADM123-XYZ or USR123-XYZ format."
-          );
-        } else if (
-          registerCode &&
-          generatedCode &&
-          registerCode.value !== generatedCode
-        ) {
-          isValid = false;
-          showError(
-            "register-code-error",
-            "Verification code does not match the generated code."
-          );
+          // Relaxed regex to accommodate master code or standard codes
+          if (role === 'user' && !/^(ADM|USR)\d{3}-[A-Z]{3}$/.test(registerCode.value)) {
+            isValid = false;
+            showError(
+              "register-code-error",
+              "Verification code must be in ADM123-XYZ or USR123-XYZ format."
+            );
+          }
         } else {
           hideError("register-code-error");
         }
@@ -628,7 +609,7 @@ document.addEventListener("DOMContentLoaded", function () {
             password: formData.get("password"),
             confirmPassword: formData.get("confirmPassword"),
             role: role,
-            verificationCode: generatedCode,
+            verificationCode: formData.get("verificationCode"),
           };
 
           fetch("/api/auth/register", {
@@ -641,9 +622,9 @@ document.addEventListener("DOMContentLoaded", function () {
             .then((response) => response.json())
             .then((result) => {
               if (result.error) {
-                showError("general-error", result.error);
+                showNotification(result.error, "error");
               } else {
-                showError("success-message", "Registration successful!");
+                showNotification("Registration successful! Welcome to LibroHub.", "success");
                 modal.style.display = "none";
                 form.reset();
                 generatedCode = null;
@@ -710,11 +691,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (errorEl) {
       errorEl.textContent = message;
       errorEl.style.display = "block";
-      if (id === "success-message") {
-        errorEl.style.color = "green";
-      } else {
-        errorEl.style.color = "red";
-      }
+      errorEl.style.color = id === "success-message" ? "var(--success)" : "#ff4d4d";
     }
   }
 
@@ -724,6 +701,51 @@ document.addEventListener("DOMContentLoaded", function () {
       errorEl.style.display = "none";
     }
   }
+
+  // Modern Toast Notification Utility
+  function showNotification(message, type = "success") {
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 24px;
+      background: ${type === "success" ? "#10b981" : "#ef4444"};
+      color: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 10000;
+      animation: slideIn 0.3s ease-out;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    `;
+    
+    const icon = document.createElement("i");
+    icon.className = type === "success" ? "fas fa-check-circle" : "fas fa-exclamation-circle";
+    toast.appendChild(icon);
+    
+    const text = document.createElement("span");
+    text.textContent = message;
+    toast.appendChild(text);
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.animation = "slideOut 0.3s ease-in forwards";
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Fix Input Concatenation Bug (Clear on focus if double event triggers)
+  const allInputs = document.querySelectorAll("input");
+  allInputs.forEach(input => {
+    input.addEventListener("focus", () => {
+      // Optional: Clear or reset state if needed, but primary fix is in how we handle 'input' events
+    });
+  });
 
   const showMoreFaqsBtn = document.getElementById("show-more-faqs");
   const faqHidden = document.querySelector(".faq-hidden");

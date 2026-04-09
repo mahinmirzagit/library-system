@@ -23,6 +23,7 @@
     />
     <link rel="stylesheet" href="styles/main.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
   <body>
     <div class="main-container">
@@ -52,14 +53,6 @@
               stroke="#58a6ff"
               stroke-width="3"
               stroke-linecap="round"
-            />
-            <line
-              x1="20"
-              y1="5"
-              x2="20"
-              y2="35"
-              stroke="#30363d"
-              stroke-width="2"
             />
 
             <text
@@ -211,31 +204,31 @@
               </p>
               <div class="social-icons">
                 <a
-                  href="https://www.facebook.com/LibraryManagerOfficial"
+                  href="https://www.facebook.com/LibroHub"
                   title="Facebook"
                   target="_blank"
                   ><i class="fa-brands fa-facebook"></i
                 ></a>
                 <a
-                  href="https://www.x.com/LibraryManagerOfficial"
+                  href="https://www.x.com/LibroHub"
                   title="Twitter"
                   target="_blank"
                   ><i class="fa-brands fa-twitter"></i
                 ></a>
                 <a
-                  href="https://www.instagram.com/LibraryManagerOfficial"
+                  href="https://www.instagram.com/LibroHub"
                   title="Instagram"
                   target="_blank"
                   ><i class="fa-brands fa-instagram"></i
                 ></a>
                 <a
-                  href="https://www.linkedin.com/LibraryManagerOfficial"
+                  href="https://www.linkedin.com/LibroHub"
                   title="LinkedIn"
                   target="_blank"
                   ><i class="fa-brands fa-linkedin"></i
                 ></a>
                 <a
-                  href="https://www.github.com/LibraryManagerOfficial"
+                  href="https://www.github.com/mahinmirzagit/library-system"
                   title="GitHub"
                   target="_blank"
                   ><i class="fa-brands fa-github"></i
@@ -606,31 +599,19 @@
                   />
                   <label for="register-admin">Admin</label>
                 </div>
-                <div class="payment-section">
-                  <h4>Payment for Verification Code - $5.99</h4>
-                  <input
-                    type="text"
-                    name="cardNumber"
-                    placeholder="Card Number (16 digits)"
-                    required
-                  />
-                  <span class="error-message" id="card-number-error"></span>
-                  <input
-                    type="text"
-                    name="expiry"
-                    placeholder="Expiry Date (MM/YY)"
-                    required
-                  />
-                  <span class="error-message" id="expiry-error"></span>
-                  <input
-                    type="text"
-                    name="cvv"
-                    placeholder="CVV (3 digits)"
-                    required
-                  />
-                  <span class="error-message" id="cvv-error"></span>
-                  <button type="button" class="pay-btn">
-                    Pay and Get Code
+                <div id="payment-container" class="payment-section">
+                  <h4>Verification Fee - ₹800</h4>
+                  <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px;">
+                    Secure payment via <strong>Razorpay</strong> is required to generate your unique user code. Supports UPI, Cards, and Net Banking.
+                  </p>
+                  
+                  <div style="background: rgba(88, 166, 255, 0.05); padding: 15px; border-radius: 8px; border: 1px dashed var(--border-color); text-align: center; margin-bottom: 15px;">
+                    <img src="https://razorpay.com/assets/razorpay-glyph.svg" alt="Razorpay" style="height: 30px; margin-bottom: 10px; opacity: 0.8;">
+                    <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Click below to open the secure payment gateway.</p>
+                  </div>
+
+                  <button type="button" class="pay-btn" id="user-pay-btn">
+                    <i class="fas fa-lock"></i> Pay ₹800 via Razorpay
                   </button>
                   <span
                     id="countdown-timer"
@@ -645,6 +626,10 @@
                       top: -5px;
                     "
                   ></span>
+                </div>
+                <div id="admin-notice" style="display: none; padding: 15px; background: rgba(88, 166, 255, 0.1); border-radius: 8px; border: 1px solid var(--secondary); margin-bottom: 15px;">
+                  <h4 style="color: var(--secondary); margin-bottom: 5px;"><i class="fas fa-shield-alt"></i> Admin Registration</h4>
+                  <p style="font-size: 12px; color: var(--text-muted);">Enter the established Admin Verification Code below to authorize your account.</p>
                 </div>
                 <input
                   type="text"

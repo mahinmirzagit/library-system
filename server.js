@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
@@ -36,6 +37,7 @@ app.use("/api/activities", require("./routes/activities"));
 app.use("/api/settings", require("./routes/settings"));
 app.use("/api/auth", require("./routes/auth").router);
 app.use("/api/submissions", require("./routes/submissions"));
+app.use("/api/payments", require("./routes/payments"));
 
 app.get("/api/welcome", (req, res) => {
   console.log(`Request received: ${req.method} ${req.path}`);
@@ -64,4 +66,4 @@ process.on("SIGINT", () => {
   });
 });
 
-module.exports = db;
+module.exports = app;
