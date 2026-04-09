@@ -7,8 +7,8 @@
 
 A modern, comprehensive library management system built with Node.js, Express, and SQLite. Features a beautiful web interface for both administrators and users, complete with book cataloging, user management, activity tracking, and real-time notifications.
 
-Deployed on Vercel🔗
-Link: _NOT AVAILABLE_
+Deployed on Vercel🔗  
+Link: https://librohub-nine.vercel.app/
 
 ## ✨ Features
 
