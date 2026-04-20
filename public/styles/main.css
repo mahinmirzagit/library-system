@@ -159,6 +159,7 @@ p {
 .admin-btns .signup-btn {
   background: var(--primary-accent);
   color: var(--bg-dark);
+  margin-left: 10px;
 }
 .admin-btns .signup-btn:hover {
   background: var(--primary-hover);
@@ -333,11 +334,12 @@ p {
   border-radius: 12px;
   border: 1px solid var(--border-color);
   text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
 }
 .feature-item:hover {
   transform: translateY(-10px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  background-color: #1c2025;
 }
 .feature-item .icon {
   font-size: 2.5rem;
@@ -449,6 +451,17 @@ p {
 .stars i.active {
   color: #ffd700;
   transform: scale(1.2);
+}
+
+@keyframes error-glow {
+  0% { text-shadow: 0 0 0px rgba(248, 81, 73, 0); }
+  50% { text-shadow: 0 0 5px #f85149, 0 0 5px #f85149; transform: scale(1.1); }
+  100% { text-shadow: 0 0 0px rgba(248, 81, 73, 0); }
+}
+
+.stars.error-glow i {
+  color: #f85149 !important;
+  animation: error-glow 0.5s ease-in-out infinite;
 }
 
 .rating-submit-btn {
@@ -869,6 +882,215 @@ footer p {
 
 .tab-pane.active {
   display: block;
+}
+
+/* Social Auth Styles */
+.social-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 25px;
+}
+
+.social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.social-btn i {
+  font-size: 1.2rem;
+  width: 20px;
+  text-align: center;
+}
+
+.social-btn:hover {
+  transform: translateY(-2px);
+  background: var(--sidebar-hover);
+}
+
+.social-btn.google:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: #4285F4;
+  box-shadow: 0 0 15px rgba(66, 133, 244, 0.2), 
+              0 0 30px rgba(52, 168, 83, 0.1), 
+              0 0 45px rgba(251, 188, 5, 0.05);
+}
+
+.social-btn.outlook:hover {
+  background: rgba(0, 164, 239, 0.03);
+  border-color: #00a4ef;
+  box-shadow: 0 0 20px rgba(0, 164, 239, 0.3);
+}
+
+.social-btn.phone-email:hover {
+  background: rgba(88, 166, 255, 0.1);
+  border-color: var(--primary-accent);
+  color: var(--primary-accent);
+}
+
+.auth-separator {
+  position: relative;
+  text-align: center;
+  margin: 30px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.auth-separator::before,
+.auth-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.auth-separator span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Role Picker for Social Login */
+.role-picker-social {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.role-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: var(--bg-dark);
+}
+
+.role-card i {
+  font-size: 1.8rem;
+  color: var(--text-muted);
+  transition: color 0.3s ease;
+}
+
+.role-card span {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.role-card small {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.role-card:has(input:checked),
+.role-card.selected {
+  border-color: var(--primary-accent);
+  background: rgba(88, 166, 255, 0.08);
+  box-shadow: 0 0 15px rgba(88, 166, 255, 0.2);
+}
+
+.role-card:has(input:checked) i {
+  color: var(--primary-accent);
+}
+
+/* OTP Modal Styles */
+.otp-role-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.otp-role-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.otp-role-pill {
+  padding: 5px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.otp-role-pill.active {
+  border-color: var(--primary-accent);
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--primary-accent);
+}
+
+#otp-email-input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-size: 1rem;
+  box-sizing: border-box;
+  outline: none;
+  margin-top: 12px;
+  transition: border-color 0.3s ease;
+}
+
+#otp-email-input:focus {
+  border-color: var(--primary-accent);
+}
+
+.otp-code-inputs {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.otp-digit {
+  width: 48px;
+  height: 56px;
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-dark);
+  color: var(--text-main);
+  outline: none;
+  transition: all 0.25s ease;
+  caret-color: transparent;
+}
+
+.otp-digit:focus {
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+.otp-digit.filled {
+  border-color: var(--primary-accent);
+  background: rgba(88, 166, 255, 0.08);
 }
 
 .auth-form {

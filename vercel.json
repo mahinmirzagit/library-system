@@ -19,5 +19,11 @@
       "src": "/(.*)",
       "dest": "/public/$1"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/calculate-fines",
+      "schedule": "0 0 * * *"
+    }
   ]
 }

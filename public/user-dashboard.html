@@ -18,7 +18,8 @@
     />
     <link rel="stylesheet" href="styles/dashboard.css" />
     <link rel="stylesheet" href="styles/responsive.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="styles/shelf-locator.css" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   </head>
   <body>
     <div class="dashboard-container">
@@ -177,8 +178,8 @@
                 <tr>
                   <th>Title</th>
                   <th>Author</th>
-                  <th>Issue Year</th>
-                  <th>Status</th>
+                  <th>ISBN</th>
+                  <th>Availability</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -206,7 +207,14 @@
               <div class="profile-details">
                 <h3 id="user-name">User Name</h3>
                 <p id="user-email">user@example.com</p>
-                <p id="user-role">Role: User</p>
+                <div class="user-badge" style="margin-top: 15px; padding: 15px; background: #161b22; border-radius: 8px; border: 1px solid #30363d; text-align: center;">
+                  <h4 style="font-size: 12px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase;">Identity Badge</h4>
+                  <div id="user-qr-container" style="background: white; padding: 10px; display: inline-block; border-radius: 4px; margin-bottom: 10px;">
+                    <!-- QR generated here -->
+                    <i class="fas fa-qrcode fa-3x" style="color: #0d1117;"></i>
+                  </div>
+                  <p id="user-qr-uuid" style="font-family: monospace; font-size: 11px; color: #58a6ff;"></p>
+                </div>
               </div>
             </div>
             <form class="settings-form">
@@ -311,13 +319,10 @@
             <div class="description-section">
               <h2 class="section-title">Description</h2>
               <p id="book-description" class="description-text">
-                Between life and death, there is a library. When Nora Seed finds
-                herself faced with the possibility of changing her life for a
-                new one, following a different path, she must decide what is
-                truly fulfilling in life. A captivating and thought-provoking
-                novel exploring choices, regrets, and second chances.
+                Description goes here...
               </p>
             </div>
+            <div id="shelf-locator-container"></div>
           </div>
         </div>
       </div>
@@ -379,6 +384,8 @@
       </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="scripts/shelfLocator.js"></script>
     <script src="scripts/user-dashboard.js"></script>
   </body>
 </html>

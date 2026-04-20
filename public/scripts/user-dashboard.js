@@ -135,18 +135,10 @@ function loadBooks() {
         row.innerHTML = `
             <td>${book.title}</td>
             <td>${book.author}</td>
-            <td>${book.publication_year || "N/A"}</td>
-            <td><span class="status ${book.status}">${book.status}</span></td>
+            <td>${book.isbn}</td>
+            <td><span class="status ${book.available_copies > 0 ? 'available' : 'borrowed'}">${book.available_copies || 0} Available</span></td>
             <td>
-              <button class="action-btn-small view-btn" data-id="${
-                book.id
-              }"><i class="fas fa-eye"></i></button>
-              <button class="action-btn-small borrow-btn" data-id="${
-                book.id
-              }"><i class="fas fa-hand-holding"></i></button>
-              <button class="action-btn-small wishlist-btn" data-id="${
-                book.id
-              }"><i class="fas fa-heart"></i></button>
+              <button class="action-btn-small view-btn" data-id="${book.id}"><i class="fas fa-eye"></i> View</button>
             </td>
           `;
         tbody.appendChild(row);
@@ -164,9 +156,17 @@ function loadUserProfile() {
     .then((user) => {
       document.getElementById("user-name").textContent = user.name;
       document.getElementById("user-email").textContent = user.email;
-      document.getElementById("user-role").textContent = `Role: ${user.role}`;
       document.getElementById("profile-name").value = user.name;
       document.getElementById("profile-email").value = user.email;
+
+      // Identity Badge QR Generation
+      if (user.user_qr_code) {
+        document.getElementById("user-qr-uuid").textContent = user.user_qr_code;
+        const qr = qrcode(0, 'M');
+        qr.addData(user.user_qr_code);
+        qr.make();
+        document.getElementById("user-qr-container").innerHTML = qr.createImgTag(4);
+      }
     })
     .catch((error) => {
       console.error("Error loading user profile:", error);
@@ -187,18 +187,16 @@ function loadBorrowedBooks() {
         books.forEach((book) => {
           const item = document.createElement("div");
           item.className = "borrowed-book-item";
+          item.style.borderLeft = book.fine_amount > 0 ? "4px solid #f85149" : "4px solid #238636";
           item.innerHTML = `
             <div class="book-info">
               <h3>${book.title}</h3>
               <p>by ${book.author}</p>
-              <p>Borrowed on: ${new Date(
-                book.borrow_date
-              ).toLocaleDateString()}</p>
-              <p>Due date: ${new Date(book.due_date).toLocaleDateString()}</p>
+              <p>Shelf: <strong style="color: #58a6ff;">${book.shelf_coordinate}</strong></p>
+              <p>Due: ${new Date(book.due_date).toLocaleDateString()}</p>
+              <p>Fine: <strong style="color: ${book.fine_amount > 0 ? '#f85149' : '#c9d1d9'}">Rs. ${book.fine_amount}</strong></p>
             </div>
-            <button class="btn return-book-btn" data-id="${
-              book.id
-            }">Return Book</button>
+            <div class="badge-status ${book.status}">${book.status}</div>
           `;
           list.appendChild(item);
         });
@@ -469,6 +467,15 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("book-cover-image").src =
               book.cover_image ||
               "https://via.placeholder.com/150x200/cccccc/000000?text=No+Cover";
+            
+            // Render Shelf Locator for User
+            fetch(`/api/books/${id}/copies`)
+              .then(res => res.json())
+              .then(copies => {
+                const avail = copies.find(c => c.status === 'available');
+                renderShelfLocator("shelf-locator-container", avail ? avail.shelf_coordinate : "Out of Stock (Physical Only)");
+              });
+
             openModal("view-book-modal");
           })
           .catch((error) => {

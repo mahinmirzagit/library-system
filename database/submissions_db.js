@@ -75,11 +75,25 @@ db.serialize(() => {
 
   db.run(`CREATE TABLE IF NOT EXISTS contact_submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
+        username TEXT NOT NULL,
         email TEXT NOT NULL,
         message TEXT NOT NULL,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+
+  // Migration: rename 'name' -> 'username' if the old column still exists.
+  // Silently ignore if it doesn't exist (migration already ran).
+  if (!isRemote) {
+    db.run(`ALTER TABLE contact_submissions RENAME COLUMN name TO username`, (err) => {
+      if (err) {
+        const msg = err.message.toLowerCase();
+        // Suppress expected errors: column already renamed or never existed
+        if (!msg.includes("no such column") && !msg.includes("duplicate column")) {
+          console.error("Migration error (renaming name to username):", err.message);
+        }
+      }
+    });
+  }
 
   db.run(`CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

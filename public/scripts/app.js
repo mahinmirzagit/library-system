@@ -83,17 +83,26 @@ document.addEventListener("DOMContentLoaded", function () {
   const loginBtn = document.querySelector(".login-btn");
   const signupBtn = document.querySelector(".signup-btn");
   const closeBtn = document.querySelector(".close");
+  const readMoreBtn = document.querySelector(".read-more-btn");
   const tabButtons = document.querySelectorAll(".tab-btn");
   const tabPanes = document.querySelectorAll(".tab-pane");
-  const payButtons = document.querySelectorAll(".pay-btn");
+  const payButtons = []; // payment removed – kept to avoid reference errors
   const submitButtons = document.querySelectorAll(".submit-btn");
-  let generatedCode = null;
-  let paymentCompleted = false;
-  let sendAgainTimeout = null;
+  let generatedCode = null; // legacy – no longer used
 
   loginBtn.addEventListener("click", () => {
     modal.style.display = "block";
     switchTab("login");
+  });
+
+  readMoreBtn.addEventListener("click", (e) => {
+    const userEmail = localStorage.getItem("userEmail");
+    if (userEmail) {
+      handleGoToLibrary();
+    } else {
+      modal.style.display = "block";
+      switchTab("register");
+    }
   });
 
   signupBtn.addEventListener("click", () => {
@@ -134,6 +143,386 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // ── Handle Firebase Email Link sign-in (runs on page load) ──────────────
+  // When user clicks the magic link in their email, Firebase redirects here.
+  (async function handleEmailLinkReturn() {
+    if (!window._firebaseAuth) return;
+    if (!window._firebaseAuth.isSignInWithEmailLink(window.location.href)) {
+      // No email link in URL — clear any stale localStorage to prevent phantom firings
+      if (!localStorage.getItem("emailForSignIn")) return;
+      // Only clear if the URL clearly has no link params
+      const hasLinkParams = window.location.href.includes("oobCode");
+      if (!hasLinkParams) {
+        localStorage.removeItem("emailForSignIn");
+        localStorage.removeItem("pendingRole");
+        localStorage.removeItem("pendingAdminCode");
+        localStorage.removeItem("pendingIntent");
+      }
+      return;
+    }
+
+    let email = localStorage.getItem("emailForSignIn");
+    if (!email) {
+      email = window.prompt("Please enter your email address to complete sign-in:");
+      if (!email) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+    }
+
+    // ⚠️ IMPORTANT: Save the original URL BEFORE cleaning it.
+    // Firebase's signInWithEmailLink needs the oobCode query param that's in the URL.
+    const originalHref = window.location.href;
+
+    // Clean the URL right away so refreshing doesn't re-trigger
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    const role = localStorage.getItem("pendingRole") || "user";
+    const adminCode = localStorage.getItem("pendingAdminCode") || "";
+    const intent = localStorage.getItem("pendingIntent") || "register";
+
+    // Clear localStorage before the async call
+    localStorage.removeItem("emailForSignIn");
+    localStorage.removeItem("pendingRole");
+    localStorage.removeItem("pendingAdminCode");
+    localStorage.removeItem("pendingIntent");
+
+    try {
+      // Pass originalHref (with oobCode) — NOT the cleaned window.location.href
+      const result = await window._firebaseAuth.signInWithEmailLink(email, originalHref);
+      const idToken = await result.user.getIdToken();
+      await createFirebaseSession(idToken, role, adminCode, intent, result.user.displayName || email.split("@")[0]);
+    } catch (err) {
+      console.error("Email link sign-in error:", err);
+      // Distinguish actual error types for better UX
+      const msg = err.message || "";
+      setTimeout(() => {
+        modal.style.display = "block";
+        if (msg.includes("No account found")) {
+          // Server says no account → redirect to register tab
+          switchTab("register");
+          showError("general-error", "No account found. Please register first.");
+        } else if (msg.includes("already exists") || msg.includes("already registered")) {
+          switchTab("login");
+          showError("general-error", "Account already exists. Please log in.");
+        } else if (err.code === "auth/invalid-action-code" || err.code === "auth/expired-action-code") {
+          showError("general-error", "Sign-in link has expired. Click 'Continue with Email' and request a new one.");
+        } else if (err.code === "auth/invalid-email") {
+          showError("general-error", "Email does not match the sign-in link. Please try again.");
+        } else {
+          showError("general-error", msg || "Sign-in failed. Please try again.");
+        }
+      }, 400);
+    }
+  })();
+
+  // ── Handle URL param messages (from server-side redirects) ────────────────
+  (function handleAuthMessages() {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    const msg = params.get("msg");
+    if (!tab && !msg) return;
+
+    if (tab === "login" || tab === "register") {
+      modal.style.display = "block";
+      switchTab(tab);
+    }
+
+    const messages = {
+      "already-registered": "This email is already registered. Please log in instead.",
+      "not-registered": "No account found with this email. Please register first.",
+      "admin-code-required": "Invalid admin code. Please try again.",
+    };
+
+    if (msg && messages[msg]) {
+      setTimeout(() => showError("general-error", messages[msg]), 200);
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  })();
+
+  // ── Register form: show/hide admin code row ───────────────────────────────
+  const registerForm = document.querySelector("#register-tab .auth-form");
+  const adminCodeRow = document.getElementById("admin-code-row");
+  const adminRadio = document.getElementById("register-admin");
+  const userRadio = document.getElementById("register-user");
+
+  if (adminRadio && adminCodeRow) {
+    adminRadio.addEventListener("change", () => {
+      adminCodeRow.style.display = adminRadio.checked ? "block" : "none";
+    });
+    userRadio.addEventListener("change", () => {
+      adminCodeRow.style.display = "none";
+    });
+  }
+
+  // ── Firebase: Unified session creator ────────────────────────────────────
+  // Called after ANY successful Firebase sign-in. Posts idToken to backend.
+  async function createFirebaseSession(idToken, role, adminCode, intent, displayName) {
+    const res = await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, role, adminCode, intent, displayName }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Authentication failed");
+    localStorage.setItem("userEmail", data.user.email);
+    localStorage.setItem("userName", data.user.name);
+    localStorage.setItem("userRole", data.user.role);
+    window.location.href = data.redirectTo;
+  }
+
+  // ── Firebase: Sign in with popup (Google or Microsoft) ────────────────────
+  async function signInWithFirebasePopup(providerName, role, adminCode, intent) {
+    let provider;
+    if (providerName === "google") {
+      provider = new firebase.auth.GoogleAuthProvider();
+    } else if (providerName === "microsoft") {
+      provider = new firebase.auth.OAuthProvider("microsoft.com");
+      provider.setCustomParameters({ tenant: "common" });
+    } else {
+      return;
+    }
+
+    try {
+      const result = await window._firebaseAuth.signInWithPopup(provider);
+      const idToken = await result.user.getIdToken();
+      await createFirebaseSession(idToken, role, adminCode, intent, result.user.displayName);
+    } catch (err) {
+      if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") return;
+      if (err.code === "auth/account-exists-with-different-credential") {
+        throw new Error("This email is already registered with a different sign-in method. Try a different option.");
+      }
+      throw err;
+    }
+  }
+
+  // ── Social Auth Buttons & Role Modal ─────────────────────────────────────
+  const googleBtns = document.querySelectorAll(".social-btn.google");
+  const outlookBtns = document.querySelectorAll(".social-btn.outlook");
+  const phoneEmailBtns = document.querySelectorAll(".social-btn.phone-email");
+
+  const roleSelectModal = document.getElementById("role-select-modal");
+  const roleModalClose = document.getElementById("role-modal-close");
+  const roleModalConfirm = document.getElementById("role-modal-confirm");
+  const roleModalTitle = document.getElementById("role-modal-title");
+  const roleModalIcon = document.getElementById("role-modal-provider-icon");
+  const socialAdminCodeRow = document.getElementById("social-admin-code-row");
+  const socialAdminCodeInput = document.getElementById("social-admin-code");
+  const socialAdminCodeError = document.getElementById("social-admin-code-error");
+  let pendingProvider = null;
+  let pendingIntent = "register";
+
+  const googleSVG = `<svg width="48" height="48" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>`;
+  const outlookSVG = `<svg width="48" height="48" viewBox="0 0 23 23"><rect fill="#f25022" x="1" y="1" width="10" height="10"/><rect fill="#7fba00" x="12" y="1" width="10" height="10"/><rect fill="#00a4ef" x="1" y="12" width="10" height="10"/><rect fill="#ffb900" x="12" y="12" width="10" height="10"/></svg>`;
+
+  function openRoleModal(provider, intent) {
+    pendingProvider = provider;
+    pendingIntent = intent;
+    roleModalTitle.textContent = `Continue with ${provider === "google" ? "Google" : "Microsoft"}`;
+    roleModalIcon.innerHTML = provider === "google" ? googleSVG : outlookSVG;
+    document.querySelectorAll('input[name="social-role"]').forEach(r => r.checked = r.value === "user");
+    if (socialAdminCodeRow) socialAdminCodeRow.style.display = "none";
+    if (socialAdminCodeInput) socialAdminCodeInput.value = "";
+    if (socialAdminCodeError) socialAdminCodeError.style.display = "none";
+    roleSelectModal.style.display = "block";
+  }
+
+  // Show admin code when admin role selected in role modal
+  document.querySelectorAll('input[name="social-role"]').forEach(radio => {
+    radio.addEventListener("change", () => {
+      if (socialAdminCodeRow) {
+        socialAdminCodeRow.style.display = radio.value === "admin" && radio.checked ? "block" : "none";
+      }
+    });
+  });
+
+  roleModalClose.addEventListener("click", () => { roleSelectModal.style.display = "none"; });
+  window.addEventListener("click", e => { if (e.target === roleSelectModal) roleSelectModal.style.display = "none"; });
+
+  roleModalConfirm.addEventListener("click", async () => {
+    const role = document.querySelector('input[name="social-role"]:checked')?.value || "user";
+
+    // Pre-validate admin code before launching popup
+    if (role === "admin" && pendingIntent === "register") {
+      const code = socialAdminCodeInput ? socialAdminCodeInput.value.trim() : "";
+      if (!code) {
+        if (socialAdminCodeError) { socialAdminCodeError.textContent = "Admin secret code is required."; socialAdminCodeError.style.display = "block"; }
+        return;
+      }
+      try {
+        const res = await fetch("/api/auth/validate-admin-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (!data.valid) {
+          if (socialAdminCodeError) { socialAdminCodeError.textContent = data.error || "Invalid admin code."; socialAdminCodeError.style.display = "block"; }
+          return;
+        }
+      } catch {
+        if (socialAdminCodeError) { socialAdminCodeError.textContent = "Network error. Try again."; socialAdminCodeError.style.display = "block"; }
+        return;
+      }
+    }
+
+    roleSelectModal.style.display = "none";
+    const adminCode = socialAdminCodeInput?.value.trim() || "";
+
+    try {
+      await signInWithFirebasePopup(pendingProvider, role, adminCode, pendingIntent);
+    } catch (err) {
+      modal.style.display = "block";
+      showError("general-error", err.message || "Sign-in failed. Please try again.");
+    }
+  });
+
+  // Google buttons — direct login or show role modal for register
+  googleBtns.forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const intent = document.querySelector(".tab-btn.active")?.dataset.tab === "register" ? "register" : "login";
+      if (intent === "login") {
+        try {
+          await signInWithFirebasePopup("google", null, "", "login");
+        } catch (err) {
+          showError("general-error", err.message || "Sign-in failed.");
+        }
+      } else {
+        openRoleModal("google", "register");
+      }
+    });
+  });
+
+  // Outlook/Microsoft buttons
+  outlookBtns.forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const intent = document.querySelector(".tab-btn.active")?.dataset.tab === "register" ? "register" : "login";
+      if (intent === "login") {
+        try {
+          await signInWithFirebasePopup("microsoft", null, "", "login");
+        } catch (err) {
+          showError("general-error", err.message || "Sign-in failed.");
+        }
+      } else {
+        openRoleModal("microsoft", "register");
+      }
+    });
+  });
+
+  // ── Email Magic Link Modal ────────────────────────────────────────────────
+  const otpModal = document.getElementById("otp-modal");
+  const otpModalClose = document.getElementById("otp-modal-close");
+  const otpStep1 = document.getElementById("otp-step-1");
+  const otpStep2 = document.getElementById("otp-step-2");
+  const otpEmailInput = document.getElementById("otp-email-input");
+  const otpEmailError = document.getElementById("otp-email-error");
+  const otpSendBtn = document.getElementById("otp-send-btn");
+  const otpResend = document.getElementById("otp-resend-link");
+  let otpSelectedRole = "user";
+  let otpIntent = "register";
+
+  // Role pill toggle
+  document.querySelectorAll(".otp-role-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      document.querySelectorAll(".otp-role-pill").forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      otpSelectedRole = pill.dataset.role;
+      const otpAdminRow = document.getElementById("otp-admin-code-row");
+      if (otpAdminRow) otpAdminRow.style.display = (otpSelectedRole === "admin" && otpIntent === "register") ? "block" : "none";
+    });
+  });
+
+  function openOtpModal() {
+    otpIntent = document.querySelector(".tab-btn.active")?.dataset.tab === "register" ? "register" : "login";
+    otpStep1.style.display = "block";
+    otpStep2.style.display = "none";
+    otpEmailInput.value = "";
+    otpEmailError.style.display = "none";
+    otpSelectedRole = "user";
+    document.querySelectorAll(".otp-role-pill").forEach(p => p.classList.toggle("active", p.dataset.role === "user"));
+    const otpAdminRow = document.getElementById("otp-admin-code-row");
+    if (otpAdminRow) otpAdminRow.style.display = "none";
+    const otpRoleRow = document.querySelector(".otp-role-row");
+    if (otpRoleRow) otpRoleRow.style.display = otpIntent === "register" ? "flex" : "none";
+    otpModal.style.display = "block";
+  }
+
+  otpModalClose.addEventListener("click", () => { otpModal.style.display = "none"; });
+  window.addEventListener("click", e => { if (e.target === otpModal) otpModal.style.display = "none"; });
+  phoneEmailBtns.forEach(btn => btn.addEventListener("click", openOtpModal));
+
+  async function sendEmailLink() {
+    const email = otpEmailInput.value.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      otpEmailError.textContent = "Please enter a valid email address.";
+      otpEmailError.style.display = "block";
+      return;
+    }
+
+    // Validate admin code before sending link
+    if (otpIntent === "register" && otpSelectedRole === "admin") {
+      const adminCodeEl = document.getElementById("otp-admin-code-input");
+      const adminCode = adminCodeEl ? adminCodeEl.value.trim() : "";
+      if (!adminCode) {
+        otpEmailError.textContent = "Admin Secret Code is required to register as Admin.";
+        otpEmailError.style.display = "block";
+        return;
+      }
+      // Pre-validate on backend
+      try {
+        const chk = await fetch("/api/auth/validate-admin-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: adminCode }),
+        });
+        const chkData = await chk.json();
+        if (!chkData.valid) {
+          otpEmailError.textContent = chkData.error || "Invalid admin secret code.";
+          otpEmailError.style.display = "block";
+          return;
+        }
+        localStorage.setItem("pendingAdminCode", adminCode);
+      } catch {
+        otpEmailError.textContent = "Network error. Please try again.";
+        otpEmailError.style.display = "block";
+        return;
+      }
+    }
+
+    otpEmailError.style.display = "none";
+    otpSendBtn.disabled = true;
+    otpSendBtn.textContent = "Sending link...";
+
+    // Store context for when user returns from email link
+    localStorage.setItem("emailForSignIn", email);
+    localStorage.setItem("pendingRole", otpSelectedRole);
+    localStorage.setItem("pendingIntent", otpIntent);
+
+    const actionCodeSettings = {
+      url: window.location.origin + "/",
+      handleCodeInApp: true,
+    };
+
+    try {
+      await window._firebaseAuth.sendSignInLinkToEmail(email, actionCodeSettings);
+      // Update hint text and show step 2
+      const hint = otpStep2.querySelector(".otp-sent-hint");
+      if (hint) hint.textContent = `Sign-in link sent to ${email}. Check your inbox!`;
+      otpStep1.style.display = "none";
+      otpStep2.style.display = "block";
+    } catch (err) {
+      console.error("Email link error:", err);
+      otpEmailError.textContent = err.message || "Failed to send sign-in link. Please try again.";
+      otpEmailError.style.display = "block";
+    } finally {
+      otpSendBtn.disabled = false;
+      otpSendBtn.textContent = "Send Sign-In Link";
+    }
+  }
+
+  otpSendBtn.addEventListener("click", sendEmailLink);
+  otpResend.addEventListener("click", e => { e.preventDefault(); sendEmailLink(); });
+
   function switchTab(tab) {
     tabButtons.forEach((btn) => btn.classList.remove("active"));
     tabPanes.forEach((pane) => pane.classList.remove("active"));
@@ -142,9 +531,9 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById(`${tab}-tab`).classList.add("active");
   }
 
-  const registerForm = document.querySelector("#register-tab form");
-  if (registerForm) {
-    const inputs = registerForm.querySelectorAll("input");
+  const regTabForm = document.querySelector("#register-tab form");
+  if (regTabForm) {
+    const inputs = regTabForm.querySelectorAll("input");
     inputs.forEach((input) => {
       input.addEventListener("input", () => {
         let errorId = "";
@@ -176,7 +565,7 @@ document.addEventListener("DOMContentLoaded", function () {
             break;
           case "confirmPassword":
             errorId = "confirm-password-error";
-            const password = registerForm.querySelector(
+            const password = regTabForm.querySelector(
               'input[name="password"]'
             );
             isValid =
@@ -245,16 +634,7 @@ document.addEventListener("DOMContentLoaded", function () {
           case "password":
             errorId = "login-password-error";
             isValid = input.value.length >= 8;
-            errorMessage = isValid
-              ? ""
-              : "Password must be at least 8 characters long.";
-            break;
-          case "verificationCode":
-            errorId = "login-code-error";
-            isValid = /^(ADM|USR)\d{3}-[A-Z]{3}$/.test(input.value);
-            errorMessage = isValid
-              ? ""
-              : "Verification code must be in ADM123-XYZ or USR123-XYZ format.";
+            errorMessage = isValid ? "" : "Password must be at least 8 characters long.";
             break;
         }
 
@@ -271,417 +651,116 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // ROLE TOGGLING LOGIC
-  const roleRadios = document.querySelectorAll('input[name="role"]');
-  roleRadios.forEach((radio) => {
-    radio.addEventListener("change", (e) => {
-      const paymentContainer = document.getElementById("payment-container");
-      const adminNotice = document.getElementById("admin-notice");
-      const vCodeInput = document.querySelector('input[name="verificationCode"]');
-
-      if (e.target.value === "admin") {
-        if (paymentContainer) paymentContainer.style.display = "none";
-        if (adminNotice) adminNotice.style.display = "block";
-        if (vCodeInput) vCodeInput.placeholder = "Enter Admin Secret Code (e.g. ADM-MASTER-777)";
-      } else {
-        if (paymentContainer) paymentContainer.style.display = "block";
-        if (adminNotice) adminNotice.style.display = "none";
-        if (vCodeInput) vCodeInput.placeholder = "Verification Code (e.g., USR123-XYZ)";
-      }
-    });
-  });
-
-  payButtons.forEach((button) => {
-    button.addEventListener("click", async () => {
-      const form = button.closest("form");
-      const role = form.querySelector('input[name="role"]:checked');
-      const nameInput = form.querySelector('input[name="name"]');
-      const emailInput = form.querySelector('input[name="email"]');
-      const passwordInput = form.querySelector('input[name="password"]');
-      const confirmPasswordInput = form.querySelector('input[name="confirmPassword"]');
-
-      if (!nameInput || !nameInput.value.trim()) {
-        showError("username-error", "Please enter your username first.");
-        return;
-      }
-
-      if (!emailInput || !emailInput.value.trim()) {
-        showError("email-error", "Please enter your email first.");
-        return;
-      }
-
-      // Check if user already exists BEFORE payment
-      try {
-        const checkResponse = await fetch("/api/auth/check-user", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: emailInput.value.trim() }),
-        });
-        const checkResult = await checkResponse.json();
-        if (checkResult.exists) {
-          showError("email-error", "An account with this email already exists. Please login instead.");
-          return;
-        }
-      } catch (error) {
-        console.error("Error checking account:", error);
-      }
-
-      if (!passwordInput || passwordInput.value.length < 8) {
-        showError("password-error", "Password must be at least 8 characters long.");
-        return;
-      }
-
-      if (passwordInput.value !== confirmPasswordInput.value) {
-        showError("confirm-password-error", "Passwords do not match.");
-        return;
-      }
-
-      // START OF RAZORPAY INTEGRATION
-      button.disabled = true;
-      const originalText = button.innerHTML;
-      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing Gateway...';
-
-      try {
-        // 1. Create Order on Server
-        const orderResponse = await fetch("/api/payments/create-order", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: 800, currency: "INR", email: emailInput.value.trim() }),
-        });
-        const order = await orderResponse.json();
-
-        if (!orderResponse.ok) throw new Error(order.error || "Order creation failed.");
-
-        // 2. Open Razorpay Checkout
-        const options = {
-          key: "rzp_test_SalsSeUn6okYsP", // Public Test Key
-          amount: order.amount,
-          currency: order.currency,
-          name: "LibroHub Library",
-          description: "Verification Fee for " + role.value.toUpperCase(),
-          image: "https://razorpay.com/assets/razorpay-glyph.svg",
-          order_id: order.id,
-          handler: async function (response) {
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment...';
-            
-            // 3. Verify Payment on Server
-            try {
-              const verifyResponse = await fetch("/api/payments/verify", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                  email: emailInput.value,
-                  role: role.value
-                }),
-              });
-              const verifyResult = await verifyResponse.json();
-
-              if (verifyResult.success) {
-                showNotification("Payment Successful! Verification code sent to your inbox.", "success");
-                paymentCompleted = true;
-                button.innerHTML = '<i class="fas fa-check-circle"></i> Paid & Verified';
-                button.style.backgroundColor = "#10b981";
-              } else {
-                throw new Error(verifyResult.error || "Payment verification failed.");
-              }
-            } catch (err) {
-              showNotification(err.message, "error");
-              button.innerHTML = originalText;
-              button.disabled = false;
-            }
-          },
-          prefill: {
-            email: emailInput.value
-          },
-          theme: {
-            color: "#58a6ff"
-          },
-          modal: {
-            ondismiss: function() {
-              button.innerHTML = originalText;
-              button.disabled = false;
-            }
-          }
-        };
-
-        const rzp = new Razorpay(options);
-        rzp.open();
-
-      } catch (error) {
-        console.error("Payment Error:", error);
-        showNotification(error.message || "Failed to initiate payment. Please try again.", "error");
-        button.innerHTML = originalText;
-        button.disabled = false;
-      }
-    });
-  });
-
+  // ── Submit Buttons: Register & Login via Firebase ─────────────────────────
   submitButtons.forEach((button) => {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       const form = button.closest("form");
-      const inputs = form.querySelectorAll("input[required]");
-      let isValid = true;
+      if (!form) return;
 
-      inputs.forEach((input) => {
-        if (!input.value.trim()) {
-          isValid = false;
-          input.style.borderColor = "red";
-        } else {
-          input.style.borderColor = "var(--border-color)";
-        }
-      });
-
+      // ── Manual Register ──────────────────────────────────────────────────
       if (form.closest("#register-tab")) {
-        const emailInput = form.querySelector('input[type="email"]');
-        if (emailInput && emailInput.value) {
-          try {
-            const checkResponse = await fetch("/api/auth/check-user", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ email: emailInput.value }),
-            });
-            if (checkResponse.ok) {
-              const checkResult = await checkResponse.json();
-              if (checkResult.exists) {
-                isValid = false;
-                showError(
-                  "email-error",
-                  "User with this email already exists. Please use a different email or login."
-                );
-              } else {
-                hideError("email-error");
-              }
-            } else {
-              isValid = false;
-              showError(
-                "general-error",
-                "Failed to verify user. Please try again."
-              );
-            }
-          } catch (error) {
-            console.error("Error checking user existence:", error);
-            isValid = false;
-            showError(
-              "general-error",
-              "Failed to verify user. Please try again."
-            );
+        const nameInput = form.querySelector('input[name="name"]');
+        const emailInput = form.querySelector('input[name="email"]');
+        const passwordInput = form.querySelector('input[name="password"]');
+        const confirmPasswordInput = form.querySelector('input[name="confirmPassword"]');
+        const roleValue = form.querySelector('input[name="role"]:checked')?.value || "user";
+        const adminCodeInput = document.getElementById("admin-code-input");
+        let isValid = true;
+
+        if (!nameInput?.value.trim() || /\s/.test(nameInput.value)) {
+          showError("username-error", "Username is required and cannot have spaces."); isValid = false;
+        } else hideError("username-error");
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput?.value || "")) {
+          showError("email-error", "Please enter a valid email address."); isValid = false;
+        } else hideError("email-error");
+
+        if (!passwordInput?.value || passwordInput.value.length < 8) {
+          showError("password-error", "Password must be at least 8 characters."); isValid = false;
+        } else hideError("password-error");
+
+        if (passwordInput?.value !== confirmPasswordInput?.value) {
+          showError("confirm-password-error", "Passwords do not match."); isValid = false;
+        } else hideError("confirm-password-error");
+
+        if (roleValue === "admin") {
+          const adminCode = adminCodeInput?.value.trim();
+          if (!adminCode) {
+            showError("admin-code-error", "Admin Secret Code is required."); isValid = false;
+          } else hideError("admin-code-error");
+        }
+
+        if (!isValid) return;
+
+        button.disabled = true;
+        button.textContent = "Creating account...";
+        try {
+          // Firebase creates the auth user (manages password securely)
+          const userCredential = await window._firebaseAuth.createUserWithEmailAndPassword(
+            emailInput.value.trim(),
+            passwordInput.value
+          );
+          const idToken = await userCredential.user.getIdToken();
+          await createFirebaseSession(
+            idToken,
+            roleValue,
+            adminCodeInput?.value.trim() || "",
+            "register",
+            nameInput.value.trim()
+          );
+        } catch (err) {
+          if (err.code === "auth/email-already-in-use") {
+            showError("email-error", "This email is already registered. Please log in.");
+          } else if (err.code === "auth/weak-password") {
+            showError("password-error", "Password is too weak. Use at least 8 characters.");
+          } else {
+            showError("general-error", err.message || "Registration failed. Please try again.");
           }
-        }
-
-        const username = form.querySelector('input[name="name"]');
-        if (username && /\s/.test(username.value)) {
-          isValid = false;
-          showError("username-error", "Username cannot contain spaces.");
-        } else {
-          hideError("username-error");
-        }
-
-        const password = form.querySelector('input[name="password"]');
-        const confirmPassword = form.querySelector(
-          'input[name="confirmPassword"]'
-        );
-        if (
-          password &&
-          !/(?=.*[a-zA-Z])(?=.*\d)(?=.*\W)/.test(password.value)
-        ) {
-          isValid = false;
-          showError(
-            "password-error",
-            "Password must contain at least one letter, one number, and one symbol."
-          );
-        } else {
-          hideError("password-error");
-        }
-
-        if (
-          password &&
-          confirmPassword &&
-          password.value !== confirmPassword.value
-        ) {
-          isValid = false;
-          showError("confirm-password-error", "Passwords do not match.");
-        } else {
-          hideError("confirm-password-error");
-        }
-
-        const cardNumber = form.querySelector('input[name="cardNumber"]');
-        if (cardNumber && !/^\d{16}$/.test(cardNumber.value)) {
-          isValid = false;
-          showError(
-            "card-number-error",
-            "Card number must be exactly 16 digits."
-          );
-        } else {
-          hideError("card-number-error");
-        }
-
-        const expiry = form.querySelector('input[name="expiry"]');
-        if (expiry && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(expiry.value)) {
-          isValid = false;
-          showError("expiry-error", "Expiry date must be in MM/YY format.");
-        } else {
-          hideError("expiry-error");
-        }
-
-        const cvv = form.querySelector('input[name="cvv"]');
-        if (cvv && !/^\d{3}$/.test(cvv.value)) {
-          isValid = false;
-          showError("cvv-error", "CVV must be exactly 3 digits.");
-        } else {
-          hideError("cvv-error");
-        }
-
-        const role = form.querySelector('input[name="role"]:checked').value;
-        const registerCode = form.querySelector(
-          'input[name="verificationCode"]'
-        );
-        
-        // ADMINS BYPASS PAYMENT CHECK
-        if (role === "user" && !paymentCompleted) {
-          isValid = false;
-          showError(
-            "register-code-error",
-            "Please complete the $10 payment to receive your verification email."
-          );
-        } else if (
-          registerCode &&
-          !/^(ADM|USR|ADM-MASTER)\d*.*$/.test(registerCode.value)
-        ) {
-          // Relaxed regex to accommodate master code or standard codes
-          if (role === 'user' && !/^(ADM|USR)\d{3}-[A-Z]{3}$/.test(registerCode.value)) {
-            isValid = false;
-            showError(
-              "register-code-error",
-              "Verification code must be in ADM123-XYZ or USR123-XYZ format."
-            );
-          }
-        } else {
-          hideError("register-code-error");
+        } finally {
+          button.disabled = false;
+          button.textContent = "Register";
         }
       }
 
+      // ── Manual Login ─────────────────────────────────────────────────────
       if (form.closest("#login-tab")) {
-        const loginEmail = form.querySelector('input[type="email"]');
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (loginEmail && !emailRegex.test(loginEmail.value)) {
-          isValid = false;
-          showError("login-email-error", "Please enter a valid email address.");
-        } else {
-          hideError("login-email-error");
-        }
+        const emailInput = form.querySelector('input[name="email"]');
+        const passwordInput = form.querySelector('input[name="password"]');
+        let isValid = true;
 
-        const loginPassword = form.querySelector('input[type="password"]');
-        if (loginPassword && loginPassword.value.length < 8) {
-          isValid = false;
-          showError(
-            "login-password-error",
-            "Password must be at least 8 characters long."
+        if (!emailInput?.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value)) {
+          showError("login-email-error", "Please enter a valid email address."); isValid = false;
+        } else hideError("login-email-error");
+
+        if (!passwordInput?.value || passwordInput.value.length < 8) {
+          showError("login-password-error", "Password must be at least 8 characters."); isValid = false;
+        } else hideError("login-password-error");
+
+        if (!isValid) return;
+
+        button.disabled = true;
+        button.textContent = "Signing in...";
+        try {
+          // Firebase verifies the password
+          const userCredential = await window._firebaseAuth.signInWithEmailAndPassword(
+            emailInput.value.trim(),
+            passwordInput.value
           );
-        } else {
-          hideError("login-password-error");
+          const idToken = await userCredential.user.getIdToken();
+          await createFirebaseSession(idToken, null, "", "login", userCredential.user.displayName);
+        } catch (err) {
+          if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+            showError("general-error", "Invalid email or password.");
+          } else if (err.code === "auth/too-many-requests") {
+            showError("general-error", "Too many failed attempts. Please try again later.");
+          } else {
+            showError("general-error", err.message || "Login failed. Please try again.");
+          }
+        } finally {
+          button.disabled = false;
+          button.textContent = "Login";
         }
-
-        const loginCode = form.querySelector('input[name="verificationCode"]');
-        if (loginCode && !/^(ADM|USR)\d{3}-[A-Z]{3}$/.test(loginCode.value)) {
-          isValid = false;
-          showError(
-            "login-code-error",
-            "Verification code must be in ADM123-XYZ or USR123-XYZ format."
-          );
-        } else {
-          hideError("login-code-error");
-        }
-      }
-
-      if (isValid) {
-        if (form.closest("#register-tab")) {
-          const formData = new FormData(form);
-          const role = form.querySelector('input[name="role"]:checked').value;
-          const data = {
-            name: formData.get("name"),
-            email: formData.get("email"),
-            password: formData.get("password"),
-            confirmPassword: formData.get("confirmPassword"),
-            role: role,
-            verificationCode: formData.get("verificationCode"),
-          };
-
-          fetch("/api/auth/register", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
-          })
-            .then((response) => response.json())
-            .then((result) => {
-              if (result.error) {
-                showNotification(result.error, "error");
-              } else {
-                showNotification("Registration successful! Welcome to LibroHub.", "success");
-                modal.style.display = "none";
-                form.reset();
-                generatedCode = null;
-
-                localStorage.setItem("userEmail", data.email);
-                localStorage.setItem("userName", data.name);
-                localStorage.setItem("userRole", result.role);
-                checkLoginStatus();
-              }
-            })
-            .catch((error) => {
-              console.error("Registration error:", error);
-              showError(
-                "general-error",
-                "Registration failed. Please try again."
-              );
-            });
-        } else if (form.closest("#login-tab")) {
-          const formData = new FormData(form);
-          const data = {
-            email: formData.get("email"),
-            password: formData.get("password"),
-            verificationCode: formData.get("verificationCode"),
-          };
-
-          fetch("/api/auth/login", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
-          })
-            .then((response) => response.json())
-            .then((result) => {
-              if (result.error) {
-                showError("general-error", result.error);
-              } else {
-                showError("success-message", "Login successful!");
-                modal.style.display = "none";
-                form.reset();
-
-                localStorage.setItem("userEmail", data.email);
-                localStorage.setItem("userName", result.user.name);
-                localStorage.setItem("userRole", result.user.role);
-
-                checkLoginStatus();
-              }
-            })
-            .catch((error) => {
-              console.error("Login error:", error);
-              showError("general-error", "Login failed. Please try again.");
-            });
-        }
-
-        document
-          .querySelectorAll(".error-message")
-          .forEach((el) => (el.style.display = "none"));
       }
     });
   });
@@ -799,8 +878,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
   stars.forEach((star, index) => {
     star.addEventListener("click", () => {
-      selectedRating = index + 1;
+      const newRating = index + 1;
+      if (selectedRating === newRating) {
+        selectedRating = 0;
+      } else {
+        selectedRating = newRating;
+      }
       updateStars(selectedRating);
+      
+      const starsContainer = document.querySelector(".rating-header .stars");
+      if (starsContainer) starsContainer.classList.remove("error-glow");
     });
   });
 
@@ -818,10 +905,13 @@ document.addEventListener("DOMContentLoaded", function () {
     ratingSubmitBtn.addEventListener("click", (event) => {
       event.preventDefault();
       if (selectedRating === 0) {
-        ratingTextarea.style.borderColor = "red";
+        const starsContainer = document.querySelector(".rating-header .stars");
+        if (starsContainer) {
+          starsContainer.classList.add("error-glow");
+          setTimeout(() => starsContainer.classList.remove("error-glow"), 500);
+        }
         return;
       }
-      ratingTextarea.style.borderColor = "";
 
       const message =
         ratingTextarea.value.trim() || `${selectedRating} star rating`;
@@ -880,7 +970,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const contactForm = document.querySelector(".contact-form");
   const contactSubmitBtn = contactForm.querySelector(".submit-btn");
-  const nameInput = contactForm.querySelector('input[placeholder="Your Name"]');
+  const nameInput = contactForm.querySelector('input[placeholder="Your Username"]');
   const emailInput = contactForm.querySelector(
     'input[placeholder="Your Email"]'
   );
@@ -894,7 +984,7 @@ document.addEventListener("DOMContentLoaded", function () {
         let errorMessage = "";
 
         switch (input.placeholder) {
-          case "Your Name":
+          case "Your Username":
             errorId = "contact-name-error";
             isValid = input.value.trim() !== "";
             errorMessage = isValid ? "" : "Name is required.";
@@ -907,7 +997,7 @@ document.addEventListener("DOMContentLoaded", function () {
               ? ""
               : "Please enter a valid Gmail address (e.g., example@gmail.com).";
             break;
-          case "Your Message":
+          case "Your Question":
             errorId = "contact-message-error";
             isValid = input.value.trim() !== "";
             errorMessage = isValid ? "" : "Message is required.";
@@ -917,6 +1007,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (errorId) {
           if (isValid) {
             hideError(errorId);
+            input.style.borderColor = "";
           } else if (errorMessage) {
             showError(errorId, errorMessage);
           }
@@ -928,21 +1019,29 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   if (nameInput) {
-    nameInput.addEventListener("click", () => {
-      const userEmail = localStorage.getItem("userEmail");
-      const userName = localStorage.getItem("userName");
-      if (userEmail && userName && !nameInput.value.trim()) {
-        nameInput.value = userName;
-      }
+    ['click', 'focus'].forEach(event => {
+      nameInput.addEventListener(event, () => {
+        const userEmail = localStorage.getItem("userEmail");
+        const userName = localStorage.getItem("userName");
+        if (userEmail && userName && !nameInput.value.trim()) {
+          nameInput.value = userName;
+          // Trigger input event to run validation
+          nameInput.dispatchEvent(new Event('input'));
+        }
+      });
     });
   }
 
   if (emailInput) {
-    emailInput.addEventListener("click", () => {
-      const userEmail = localStorage.getItem("userEmail");
-      if (userEmail && !emailInput.value.trim()) {
-        emailInput.value = userEmail;
-      }
+    ['click', 'focus'].forEach(event => {
+      emailInput.addEventListener(event, () => {
+        const userEmail = localStorage.getItem("userEmail");
+        if (userEmail && !emailInput.value.trim()) {
+          emailInput.value = userEmail;
+          // Trigger input event to run validation
+          emailInput.dispatchEvent(new Event('input'));
+        }
+      });
     });
   }
 
@@ -950,7 +1049,7 @@ document.addEventListener("DOMContentLoaded", function () {
     contactSubmitBtn.addEventListener("click", (event) => {
       event.preventDefault();
       const messageTextarea = contactForm.querySelector(
-        'textarea[placeholder="Your Message"]'
+        'textarea[placeholder="Your Question"]'
       );
 
       const userName = localStorage.getItem("userName");
@@ -974,9 +1073,11 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       if (!message) {
+        messageTextarea.style.borderColor = "red";
         showError("contact-message-error", "Please enter your message.");
         return;
       }
+      messageTextarea.style.borderColor = "";
 
       contactSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
       contactSubmitBtn.disabled = true;
@@ -987,7 +1088,7 @@ document.addEventListener("DOMContentLoaded", function () {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: name,
+          username: name,
           email: email,
           message: message,
         }),
@@ -1065,15 +1166,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function updateHeroButton(isLoggedIn) {
     const heroBtn = document.querySelector(".explore-btn");
+    const readMoreBtn = document.querySelector(".read-more-btn");
     if (heroBtn) {
       if (isLoggedIn) {
         const userRole = localStorage.getItem("userRole");
         heroBtn.textContent = "Open Library";
         heroBtn.href =
           userRole === "admin" ? "dashboard.html" : "user-dashboard.html";
+        
+        if (readMoreBtn && !readMoreBtn.id.includes("faq")) {
+          readMoreBtn.textContent = "Go to Library";
+        }
       } else {
         heroBtn.textContent = "Explore Features";
         heroBtn.href = "#features";
+        
+        if (readMoreBtn && !readMoreBtn.id.includes("faq")) {
+          readMoreBtn.textContent = "Get Started";
+        }
       }
     }
   }

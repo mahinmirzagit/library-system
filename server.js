@@ -1,6 +1,5 @@
 require("dotenv").config();
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
 const session = require("express-session");
 const fs = require("fs");
@@ -18,11 +17,11 @@ app.use(express.static("public"));
 
 app.use(
   session({
-    secret: "your-secret-key",
+    secret: process.env.SESSION_SECRET || "your-secret-key",
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: false, // Set to true in production if using HTTPS
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
@@ -37,7 +36,20 @@ app.use("/api/activities", require("./routes/activities"));
 app.use("/api/settings", require("./routes/settings"));
 app.use("/api/auth", require("./routes/auth").router);
 app.use("/api/submissions", require("./routes/submissions"));
-app.use("/api/payments", require("./routes/payments"));
+
+const { initCronJobs, calculateDailyFines } = require("./utils/cronJobs");
+initCronJobs();
+
+// Vercel Cron Endpoint
+app.get("/api/cron/calculate-fines", async (req, res) => {
+  try {
+    const changes = await calculateDailyFines();
+    res.json({ message: "Daily fines processed.", affected_rows: changes });
+  } catch (error) {
+    console.error("Cron Error:", error);
+    res.status(500).json({ error: "Fine processing failed." });
+  }
+});
 
 app.get("/api/welcome", (req, res) => {
   console.log(`Request received: ${req.method} ${req.path}`);

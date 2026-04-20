@@ -3,3 +3,4 @@ node_modules
 .vercel
 *.db
 *.db-journal
+config/serviceAccountKey.json

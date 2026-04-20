@@ -18,7 +18,8 @@
     />
     <link rel="stylesheet" href="styles/dashboard.css" />
     <link rel="stylesheet" href="styles/responsive.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="styles/shelf-locator.css" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   </head>
   <body>
     <div class="dashboard-container">
@@ -197,8 +198,8 @@
                 <tr>
                   <th>Title</th>
                   <th>Author</th>
-                  <th>Issue Year</th>
-                  <th>Status</th>
+                  <th>ISBN</th>
+                  <th>Copies (Avail/Total)</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -375,9 +376,12 @@
         <span class="close">&times;</span>
         <h3>Add New Book</h3>
         <form class="modal-form">
-          <input type="text" name="title" placeholder="Title" required />
-          <input type="text" name="author" placeholder="Author" required />
-          <input type="text" name="isbn" placeholder="ISBN" required />
+          <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" name="isbn" id="isbn-input" placeholder="ISBN (Scan or Type)" required style="flex: 1;" />
+            <button type="button" id="lookup-isbn-btn" class="btn" style="padding: 0 15px; background: #58a6ff;"><i class="fas fa-search"></i> Lookup</button>
+          </div>
+          <input type="text" name="title" id="title-input" placeholder="Title" required />
+          <input type="text" name="author" id="author-input" placeholder="Author" required />
           <input type="text" name="genre" placeholder="Genre" required />
           <input
             type="number"
@@ -401,38 +405,56 @@
       </div>
     </div>
 
-    <div id="add-user-modal" class="modal">
-      <div class="modal-content">
+    <div id="manage-copies-modal" class="modal">
+      <div class="modal-content" style="max-width: 800px;">
         <span class="close">&times;</span>
-        <h3>Add New User</h3>
-        <form class="modal-form">
-          <input
-            type="text"
-            name="Full Name"
-            placeholder="Full Name"
-            required
-          />
-          <input
-            type="email"
-            name="Email"
-            placeholder="Email"
-            autocomplete="username"
-            required
-          />
-          <input
-            type="password"
-            name="Password"
-            placeholder="Password"
-            autocomplete="new-password"
-            required
-          />
-          <select name="Role" required>
-            <option value="">Select Role</option>
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button type="submit" class="btn submit-btn">Add User</button>
+        <h3 id="manage-copies-title">Manage Physical Copies</h3>
+        <div class="copies-controls" style="margin-bottom: 20px; display: flex; gap: 15px; padding: 15px; background: #161b22; border-radius: 8px;">
+          <input type="text" id="new-copy-shelf" placeholder="Shelf (e.g., A1-B2)" style="flex: 1;" />
+          <button id="add-copy-btn" class="btn" style="background: #238636;"><i class="fas fa-plus"></i> Add Copy</button>
+        </div>
+        <div class="copies-list-table">
+          <table style="width: 100%;">
+            <thead>
+              <tr>
+                <th>Copy ID (UUID)</th>
+                <th>Shelf</th>
+                <th>Status</th>
+                <th>QR Label</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="copies-tbody">
+              <!-- Copies will be loaded here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="issue-book-modal" class="modal">
+      <div class="modal-content" style="max-width: 450px;">
+        <span class="close">&times;</span>
+        <h3>Issue Book (Scan)</h3>
+        <form class="modal-form" id="issue-form">
+          <label>Step 1: Scan User Badge QR</label>
+          <input type="text" id="scan-user-qr" placeholder="User UUID" required />
+          <label>Step 2: Scan Book Copy QR</label>
+          <input type="text" id="scan-copy-qr" placeholder="Copy UUID" required />
+          <label>Duration (Days)</label>
+          <input type="number" id="issue-days" value="14" />
+          <button type="submit" class="btn submit-btn">Confirm Issue</button>
         </form>
+      </div>
+    </div>
+
+    <div id="qr-display-modal" class="modal">
+      <div class="modal-content" style="max-width: 300px; text-align: center;">
+        <span class="close">&times;</span>
+        <h3>Copy QR Label</h3>
+        <div id="qr-container" style="padding: 20px; background: white; margin: 15px 0; border-radius: 8px;"></div>
+        <p id="qr-uuid-text" style="font-size: 12px; color: #8b949e;"></p>
+        <button class="btn" onclick="window.print()" style="width: 100%;">Print Label</button>
       </div>
     </div>
 
@@ -701,11 +723,13 @@
                 novel exploring choices, regrets, and second chances.
               </p>
             </div>
+            <div id="shelf-locator-container"></div>
           </div>
         </div>
       </div>
     </div>
 
+    <script src="scripts/shelfLocator.js"></script>
     <script src="scripts/dashboard.js"></script>
   </body>
 </html>

@@ -35,11 +35,11 @@ router.post("/rating", (req, res) => {
 });
 
 router.post("/contact", (req, res) => {
-  const { name, email, message } = req.body;
+  const { username, email, message } = req.body;
 
   db.run(
-    "INSERT INTO contact_submissions (name, email, message) VALUES (?, ?, ?)",
-    [name, email, message],
+    "INSERT INTO contact_submissions (username, email, message) VALUES (?, ?, ?)",
+    [username, email, message],
     function (err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -47,7 +47,7 @@ router.post("/contact", (req, res) => {
 
       const mainDb = require("../database/db");
       mainDb.run("INSERT INTO activities (description) VALUES (?)", [
-        `New feedback received from ${name} (${email})`,
+        `New feedback received from ${username} (${email})`,
       ]);
 
       const notificationsDb = require("../database/submissions_db");
@@ -55,7 +55,7 @@ router.post("/contact", (req, res) => {
         "INSERT INTO notifications (type, message) VALUES (?, ?)",
         [
           "contact_submitted",
-          `New contact form submission from ${name} (${email}).`,
+          `New contact form submission from ${username} (${email}).`,
         ]
       );
 

@@ -193,18 +193,12 @@ function loadBooks() {
         row.innerHTML = `
             <td>${book.title}</td>
             <td>${book.author}</td>
-            <td>${book.publication_year || "N/A"}</td>
-            <td><span class="status ${book.status}">${book.status}</span></td>
+            <td>${book.isbn}</td>
+            <td><strong>${book.available_copies || 0} / ${book.total_copies || 0}</strong></td>
             <td>
-              <button class="action-btn-small view-btn" data-id="${
-                book.id
-              }"><i class="fas fa-eye"></i></button>
-              <button class="action-btn-small edit-btn" data-id="${
-                book.id
-              }"><i class="fas fa-edit"></i></button>
-              <button class="action-btn-small delete-btn" data-id="${
-                book.id
-              }"><i class="fas fa-trash"></i></button>
+              <button class="action-btn-small view-btn" data-id="${book.id}"><i class="fas fa-eye"></i></button>
+              <button class="action-btn-small manage-copies-btn" data-id="${book.id}" title="Manage Copies"><i class="fas fa-layer-group"></i></button>
+              <button class="action-btn-small delete-btn" data-id="${book.id}"><i class="fas fa-trash"></i></button>
             </td>
           `;
         tbody.appendChild(row);
@@ -806,6 +800,15 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("book-cover-image").src =
               book.cover_image ||
               "https://via.placeholder.com/150x200/cccccc/000000?text=No+Cover";
+            
+            // Render Shelf Locator for the first available copy
+            fetch(`/api/books/${id}/copies`)
+              .then(res => res.json())
+              .then(copies => {
+                const avail = copies.find(c => c.status === 'available');
+                renderShelfLocator("shelf-locator-container", avail ? avail.shelf_coordinate : "No Available Copies on Shelf");
+              });
+
             openModal("view-book-modal");
           })
           .catch((error) => {
@@ -1437,5 +1440,96 @@ document.addEventListener("DOMContentLoaded", function () {
           showNotification("Failed to add reply", "error");
         });
     }
+  // --- Physical Inventory Management Logic ---
+  const lookupBtn = document.getElementById("lookup-isbn-btn");
+  if (lookupBtn) {
+    lookupBtn.addEventListener("click", function() {
+      const isbn = document.getElementById("isbn-input").value.trim();
+      if (!isbn) return showNotification("Please enter an ISBN first", "error");
+      lookupBtn.disabled = true;
+      lookupBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      fetch(`/api/books/details/${isbn}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) throw new Error(data.error);
+          document.getElementById("title-input").value = data.title;
+          document.getElementById("author-input").value = data.author;
+          document.querySelector('input[name="genre"]').value = data.genre;
+          document.querySelector('input[name="publicationYear"]').value = data.publication_year;
+          document.querySelector('textarea[name="description"]').value = data.description;
+          showNotification("Metadata fetched from Google Books!");
+        })
+        .catch(err => showNotification(err.message, "error"))
+        .finally(() => {
+          lookupBtn.disabled = false;
+          lookupBtn.innerHTML = '<i class="fas fa-search"></i> Lookup';
+        });
+    });
+  }
+
+  window.openManageCopies = function(bookId) {
+    const addCopyBtn = document.getElementById("add-copy-btn");
+    addCopyBtn.dataset.bookId = bookId;
+    fetch(`/api/books/${bookId}`)
+      .then(res => res.json())
+      .then(book => {
+        document.getElementById("manage-copies-title").textContent = `Copies: ${book.title}`;
+        loadCopies(bookId);
+        openModal("manage-copies-modal");
+      });
   };
+
+  window.loadCopies = function(bookId) {
+    const tbody = document.getElementById("copies-tbody");
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+    fetch(`/api/books/${bookId}/copies`)
+      .then(res => res.json())
+      .then(copies => {
+        tbody.innerHTML = "";
+        copies.forEach(copy => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td style="font-family: monospace; font-size: 11px;">${copy.copy_uuid}</td>
+            <td>${copy.shelf_coordinate}</td>
+            <td><span class="status ${copy.status}">${copy.status}</span></td>
+            <td><button class="btn-small" onclick="viewQR('${copy.copy_uuid}', '${copy.qr_code_data}')"><i class="fas fa-qrcode"></i> View</button></td>
+            <td><button class="btn-small" onclick="showNotification('Audit logging in progress')"><i class="fas fa-history"></i></button></td>
+          `;
+          tbody.appendChild(row);
+        });
+      });
+  };
+
+  window.viewQR = function(uuid, data) {
+    document.getElementById("qr-container").innerHTML = `<img src="${data}" style="width: 100%;" />`;
+    document.getElementById("qr-uuid-text").textContent = `ID: ${uuid}`;
+    openModal("qr-display-modal");
+  };
+
+  // Manage Copies Delegation
+  document.querySelector("#books-section tbody").addEventListener("click", function(e) {
+    const btn = e.target.closest(".manage-copies-btn");
+    if (btn) openManageCopies(btn.dataset.id);
+  });
+
+  const addCopyBtn = document.getElementById("add-copy-btn");
+  if (addCopyBtn) {
+    addCopyBtn.addEventListener("click", function() {
+      const bookId = this.dataset.bookId;
+      const shelf = document.getElementById("new-copy-shelf").value.trim();
+      if (!shelf) return showNotification("Shelf coordinate is required", "error");
+      fetch(`/api/books/${bookId}/copies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shelf_coordinate: shelf })
+      })
+      .then(res => res.json())
+      .then(data => {
+        showNotification("Physical copy added successfully!");
+        document.getElementById("new-copy-shelf").value = "";
+        loadCopies(bookId);
+        loadBooks();
+      });
+    });
+  }
 });
