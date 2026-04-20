@@ -75,7 +75,7 @@ router.get("/", (req, res) => {
                SUM(CASE WHEN pc.status = 'available' THEN 1 ELSE 0 END) as available_copies
         FROM books b
         LEFT JOIN physical_copies pc ON b.id = pc.book_id
-        GROUP BY b.id
+        GROUP BY b.id, b.isbn, b.title, b.author, b.genre, b.publication_year, b.description, b.cover_image, b.created_at, b.updated_at
         ORDER BY b.created_at DESC
     `;
     db.all(query, [], (err, rows) => {
@@ -88,6 +88,28 @@ router.get("/", (req, res) => {
 router.get("/:id/copies", (req, res) => {
     db.all("SELECT * FROM physical_copies WHERE book_id = ? AND is_deleted = FALSE", [req.params.id], (err, rows) => {
         if (err) return res.status(500).json({ error: "Failed to fetch copies." });
+        res.json(rows);
+    });
+});
+
+// 5a. Get Borrowed Books for Current User
+router.get("/borrowed", (req, res) => {
+    // Check if user is logged in (session id check)
+    const userId = req.session?.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const query = `
+        SELECT b.title, b.author, br.borrow_date, br.due_date, pc.copy_uuid
+        FROM borrowings br
+        JOIN physical_copies pc ON br.copy_id = pc.id
+        JOIN books b ON pc.book_id = b.id
+        WHERE br.user_id = ? AND br.status IN ('active', 'overdue')
+    `;
+    db.all(query, [userId], (err, rows) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ error: "Failed to fetch borrowed books." });
+        }
         res.json(rows);
     });
 });

@@ -13,7 +13,7 @@ router.get("/", (req, res) => {
   let conditions = [];
 
   if (search) {
-    conditions.push("(name LIKE ? OR email LIKE ?)");
+    conditions.push("(name ILIKE ? OR email ILIKE ?)");
     params.push(`%${search}%`, `%${search}%`);
   }
 

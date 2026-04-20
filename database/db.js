@@ -1,139 +1,133 @@
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
+const sqlite3 = require("sqlite3").verbose();
 
-const isRemote = process.env.TURSO_URL && process.env.TURSO_AUTH_TOKEN;
+const isPostgres = process.env.DATABASE_URL;
 let db;
 
-if (isRemote) {
-  console.log("Using Turso (remote SQLite) for database.");
-  const { createClient } = require("@libsql/client");
-  const client = createClient({
-    url: process.env.TURSO_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN,
+if (isPostgres) {
+  console.log("Using Supabase (PostgreSQL) for database.");
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
   });
 
-  // Compatibility wrapper for Turso to match sqlite3 API
+  // Helper: Convert SQLite '?' placeholders to PostgreSQL '$1, $2...'
+  function translateQuery(query) {
+    let count = 0;
+    let translated = query.replace(/\?/g, () => {
+      count++;
+      return `$${count}`;
+    });
+
+    // Emulate lastID by adding RETURNING id to INSERT statements if not present
+    if (translated.trim().toUpperCase().startsWith("INSERT") && !translated.toUpperCase().includes("RETURNING")) {
+      translated += " RETURNING id";
+    }
+    
+    translated = translated.replace(/DATETIME\('now'\)/gi, "CURRENT_TIMESTAMP");
+    translated = translated.replace(/sqlite_master/gi, "information_schema.tables");
+    
+    return translated;
+  }
+
+  // Compatibility wrapper for Postgres to match sqlite3 API
   db = {
     get: (query, params, cb) => {
-      if (typeof params === "function") {
-        cb = params;
-        params = [];
-      }
-      client.execute({ sql: query, args: params })
+      if (typeof params === "function") { cb = params; params = []; }
+      const sql = translateQuery(query);
+      pool.query(sql, params)
         .then(res => cb(null, res.rows[0]))
-        .catch(err => cb(err));
+        .catch(err => { console.error("PG GET Error:", err.message, "| SQL:", sql); cb(err); });
     },
     all: (query, params, cb) => {
-      if (typeof params === "function") {
-        cb = params;
-        params = [];
-      }
-      client.execute({ sql: query, args: params })
+      if (typeof params === "function") { cb = params; params = []; }
+      const sql = translateQuery(query);
+      pool.query(sql, params)
         .then(res => cb(null, res.rows))
-        .catch(err => cb(err));
+        .catch(err => { console.error("PG ALL Error:", err.message, "| SQL:", sql); cb(err); });
     },
     run: function(query, params, cb) {
-      if (typeof params === "function") {
-        cb = params;
-        params = [];
-      }
-      client.execute({ sql: query, args: params })
+      if (typeof params === "function") { cb = params; params = []; }
+      const sql = translateQuery(query);
+      pool.query(sql, params)
         .then(res => {
-          if (cb) cb.call({ lastID: res.lastInsertRowid, changes: Number(res.rowsAffected) }, null);
+          const context = {
+            lastID: res.rows[0] ? res.rows[0].id : null,
+            changes: res.rowCount
+          };
+          if (cb) cb.call(context, null);
         })
-        .catch(err => cb ? cb(err) : console.error(err));
+        .catch(err => {
+          console.error("PG RUN Error:", err.message, "| SQL:", sql);
+          if (cb) cb(err);
+        });
     },
     exec: async (query, cb) => {
       try {
-        // Split by semicolon and remove empty/comment-only lines
-        const statements = query
-          .split(';')
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && !s.startsWith('--'));
-        
-        // Execute sequentially to ensure schema builds correctly
-        for (const statement of statements) {
-          await client.execute(statement);
-        }
+        await pool.query(query);
         if (cb) cb(null);
       } catch (err) {
-        console.error("Batch execution error:", err);
+        console.error("PG EXEC Error:", err.message);
         if (cb) cb(err);
       }
     },
     close: (cb) => {
-      if (cb) cb(null);
+      pool.end().then(() => cb && cb(null)).catch(cb);
     }
   };
-  
-  initializeDatabase();
+
+  initializePostgres();
 } else {
+  // Fallback to local SQLite
   const dbPath = path.join(__dirname, "library.db");
   db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error("Error opening database:", err.message);
-    } else {
+    if (err) console.error("Error opening SQLite database:", err.message);
+    else {
       console.log("Connected to local SQLite database.");
-      initializeDatabase();
+      initializeSQLite();
     }
   });
 }
 
-function initializeDatabase() {
-  const schemaPath = path.join(__dirname, "schema.sql");
+function initializePostgres() {
+  const schemaPath = path.join(__dirname, "postgres-schema.sql");
+  if (!fs.existsSync(schemaPath)) {
+      console.error("Error: postgres-schema.sql missing.");
+      return;
+  }
   const schema = fs.readFileSync(schemaPath, "utf8");
 
-  // Check if the database has already been initialized by looking for the 'books' table.
-  // If it exists, skip schema creation entirely to avoid "table already exists" errors.
   db.get(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='books'",
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'books'",
     (err, row) => {
-      if (err) {
-        console.error("Error checking database:", err.message);
-        return;
-      }
-
+      if (err) return console.error("PG Init Check Error:", err.message);
       if (row) {
-        console.log("Database already initialized.");
+        console.log("Postgres database already initialized.");
       } else {
-        console.log("Initializing Physical Library database schema...");
+        console.log("Initializing Supabase Postgres schema...");
         db.exec(schema, (err) => {
-          if (err) {
-            console.error("Error initializing database:", err.message);
-          } else {
-            console.log("Database initialized successfully with the pivot schema.");
-          }
+          if (err) console.error("Error initializing Postgres:", err.message);
+          else console.log("Postgres initialized successfully.");
         });
       }
-
-      // Always run migrations (safe: uses ADD COLUMN which is idempotent via error suppression)
-      runMigrations();
     }
   );
 }
 
-// Adds new columns to support Firebase Auth without breaking existing data
-function runMigrations() {
-  const migrations = [
-    // Firebase Auth columns (new)
-    { sql: "ALTER TABLE users ADD COLUMN firebase_uid TEXT", label: "firebase_uid" },
-    { sql: "ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'manual'", label: "auth_provider" },
-    { sql: "ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0", label: "is_verified" },
-    // QR code column — schema.sql has this but older DBs may not
-    { sql: "ALTER TABLE users ADD COLUMN user_qr_code TEXT", label: "user_qr_code" },
-  ];
-
-  migrations.forEach(({ sql, label }) => {
-    db.run(sql, (err) => {
-      if (err) {
-        const msg = err.message.toLowerCase();
-        // Silently skip if column already exists or constraint conflict
-        if (!msg.includes("duplicate column name") && !msg.includes("already exists")) {
-          console.error(`Migration error (${label}):`, err.message);
-        }
-      }
-    });
+function initializeSQLite() {
+  const schemaPath = path.join(__dirname, "schema.sql");
+  const schema = fs.readFileSync(schemaPath, "utf8");
+  db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='books'", (err, row) => {
+    if (err) return;
+    if (row) console.log("SQLite database already initialized.");
+    else {
+      db.exec(schema, (err) => {
+        if (err) console.error("Error initializing SQLite:", err.message);
+        else console.log("SQLite initialized successfully.");
+      });
+    }
   });
 }
 
