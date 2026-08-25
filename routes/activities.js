@@ -5,7 +5,7 @@ const db = require("../database/db");
 router.get("/", (req, res) => {
   db.all("SELECT * FROM activities ORDER BY timestamp DESC", (err, rows) => {
     if (err) {
-      console.error("Error fetching activities:", err);
+      console.error("Error fetching the activities:", err);
       return res.status(500).json({ error: "Failed to fetch activities" });
     }
     res.json(rows);
